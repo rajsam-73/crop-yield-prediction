@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SmartFarm AI Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h1>🌱 SmartFarm AI Dashboard</h1>
+
+  <!-- Yield Prediction Form -->
+  <h2>Yield Prediction</h2>
+  <form id="yieldForm">
+    <label>Rainfall: <input id="rainfall" type="number"></label><br>
+    <label>Temperature: <input id="temperature" type="number"></label><br>
+    <label>Fertilizer: <input id="fertilizer" type="number"></label><br>
+    <label>Soil pH: <input id="soilPh" type="number" step="0.1"></label><br>
+    <label>Moisture: <input id="moisture" type="number"></label><br>
+    <label>Humidity: <input id="humidity" type="number"></label><br>
+    <label>Crop Type: <input id="cropType" type="text"></label><br>
+    <label>Season: <input id="season" type="text"></label><br>
+    <button type="submit">Predict Yield</button>
+  </form>
+  <p id="result"></p>
+
+  <!-- Location Tab -->
+  <h2>Location</h2>
+  <label>Enter Location: <input id="location" type="text" placeholder="Nairobi,KE"></label>
+  <button onclick="fetchWeather()">🌍 Get Weather for Location</button>
+  <div id="weatherResult"></div>
+
+  <!-- IoT Buttons -->
+  <h2>Quick Actions</h2>
+  <button onclick="fetchWeather()">🌦 Fetch Weather Data</button>
+  <button onclick="fetchSensors()">🌱 Fetch Sensor Data</button>
+  <button onclick="autoFillAndPredict()">⚡ Auto-Fill & Predict</button>
+
+  <!-- Prediction History -->
+  <h2>Prediction History</h2>
+  <ul id="historyList"></ul>
+  <button onclick="clearHistory()">Clear History</button>
+
+  <!-- Chart -->
+  <h2>Yield Predictions Chart</h2>
+  <canvas id="yieldChart" width="600" height="300"></canvas>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:5000";
+
+    // Chart.js setup
+    const ctx = document.getElementById("yieldChart").getContext("2d");
+    const yieldChart = new Chart(ctx, {
+      type: "bar",
+      data: { labels: [], datasets: [{ label: "Yield Predictions", data: [], backgroundColor: "rgba(75,192,192,0.6)" }] },
+      options: { responsive: true }
+    });
+
+    // Collect form data
+    function collectFormData() {
+      return {
+        rainfall: parseFloat(document.getElementById("rainfall").value) || 0,
+        temperature: parseFloat(document.getElementById("temperature").value) || 0,
+        fertilizer: parseFloat(document.getElementById("fertilizer").value) || 0,
+        soilPh: parseFloat(document.getElementById("soilPh").value) || 7,
+        soilMoisture: parseFloat(document.getElementById("moisture").value) || 0,
+        humidity: parseFloat(document.getElementById("humidity").value) || 0,
+        cropType: document.getElementById("cropType").value || "Unknown",
+        season: document.getElementById("season").value || "Unknown"
+      };
+    }
+
+    // Yield Prediction
+    async function predictYield() {
+      document.getElementById("result").innerText = "Predicting...";
+      const data = collectFormData();
+      const res = await fetch(`${API_BASE}/predict`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      const result = await res.json();
+      document.getElementById("result").innerText = "Predicted Yield: " + result.yield;
+
+      yieldChart.data.labels.push(new Date().toLocaleTimeString());
+      yieldChart.data.datasets[0].data.push(result.yield);
+      yieldChart.update();
+
+      await fetchHistory();
+    }
+
+    // Weather Auto-Fill
+    async function fetchWeather() {
+      const location = document.getElementById("location").value || "Nairobi,KE";
+      const res = await fetch(`${API_BASE}/weather?location=${location}`);
+      const data = await res.json();
+
+      document.getElementById("temperature").value = data.temperature;
+      document.getElementById("rainfall").value = data.rainfall;
+      document.getElementById("humidity").value = data.humidity;
+
+      document.getElementById("weatherResult").innerText =
+        `Location: ${data.location}, Temp: ${data.temperature}°C, Humidity: ${data.humidity}%, Rainfall: ${data.rainfall}mm`;
+    }
+
+    // Sensors Auto-Fill
+    async function fetchSensors() {
+      const res = await fetch(`${API_BASE}/sensors`);
+      const data = await res.json();
+
+      document.getElementById("moisture").value = data.soilMoisture;
+      document.getElementById("soilPh").value = data.soilPh;
+      if (data.fertilizerLevel !== undefined) {
+        document.getElementById("fertilizer").value = data.fertilizerLevel;
+      }
+    }
+
+    // Auto-Fill Both Weather + Sensors AND Predict Yield
+    async function autoFillAndPredict() {
+      await fetchWeather();
+      await fetchSensors();
+      await predictYield();
+    }
+
+    // Fetch Prediction History
+    async function fetchHistory() {
+      const res = await fetch(`${API_BASE}/history`);
+      const data = await res.json();
+      const list = document.getElementById("historyList");
+      list.innerHTML = "";
+
+      yieldChart.data.labels = [];
+      yieldChart.data.datasets[0].data = [];
+
+      data.forEach((item, index) => {
+        const li = document.createElement("li");
+        li.textContent = `${item.timestamp} → Yield: ${item.yield}`;
+        list.appendChild(li);
+
+        yieldChart.data.labels.push(`Prediction ${index + 1}`);
+        yieldChart.data.datasets[0].data.push(item.yield);
+      });
+
+      yieldChart.update();
+    }
+
+    // Clear History
+    async function clearHistory() {
+      await fetch(`${API_BASE}/history`, { method: "DELETE" });
+      document.getElementById("historyList").innerHTML = "";
+      yieldChart.data.labels = [];
+      yieldChart.data.datasets[0].data = [];
+      yieldChart.update();
+    }
+
+    // Auto-fetch weather every 5 minutes
+    setInterval(fetchWeather, 300000);
+
+    // Fetch immediately when page loads
+    window.onload = () => {
+      fetchWeather();
+      fetchSensors();
+      fetchHistory();
+    };
+
+    // Hook form submit
+    document.getElementById("yieldForm").addEventListener("submit", e => {
+      e.preventDefault();
+      predictYield();
+    });
+  </script>
+</body>
+</html>
